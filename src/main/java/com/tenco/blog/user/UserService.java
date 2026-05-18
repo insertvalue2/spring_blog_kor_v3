@@ -140,35 +140,53 @@ public class UserService {
      */
     @Transactional
     public User 회원정보수정(Integer id, UserRequest.UpdateDTO updateDTO) {
-        log.info("회원정보 서비스 시작");
+
+        String newPassword = null;
+        String newProfileImageFilename = null;
+
+        // 1. 항상 조회 부터
         User userEntity = userRepository.findById(id).orElseThrow(
-                () -> new Exception404("사용자 정보를 찾을 수 없습니다"));
+                () -> new Exception404("사용자를 찾을 수 없습니다"));
 
-        // 프로필 이미지 처리 (사용자가 이미지를 보냈다면)
-        String uuidImageFileName = null;
-        if (updateDTO.getProfileImage() != null && !updateDTO.getProfileImage().isEmpty()) {
-            // 새 프로필 정보 수정 요청
-            // 1. 기존에 프로필 사진이 있다면 삭제하고 새로 저장 (디스트), (DB 수정)
-            // 2. 기존에는 프로필 이미지가 null 인 경우
-            String oldProfileImage = userEntity.getProfileImage(); // null , 기존 이미지 명
-            //String newProfileImage = updateDTO.getProfileImage().getOriginalFilename();
-            if(!FileUtil.isImageFile(updateDTO.getProfileImage())) {
-                throw new Exception400("이미지 파일만 업로드 가능합니다");
-            }
-            // 신규 이미지 저장
-            try {
-                uuidImageFileName = FileUtil.saveFile(updateDTO.getProfileImage(), FileUtil.IMAGES_DIR);
-                // 기존 이미 삭제 처리 (있다면)
-                if(oldProfileImage != null) {
-                    FileUtil.deleteFile(oldProfileImage, FileUtil.IMAGES_DIR);
-                }
-
-            } catch (IOException e) {
-                throw new Exception500("프로필 이미지 파일 저장 실패");
-            }
+        // 2. 수정 권한 확인
+        if(!userEntity.getId().equals(id)) {
+            throw new Exception403("회원정보 수정 권한이 없습니다");
         }
-        // 더티 체킹 활용
-        userEntity.update(updateDTO, uuidImageFileName); // null, 새로운 이미지 명
+
+        // 3. 로직 처리 1 - 사용자가 비밀번호를 입력 했을 경우 갱신
+        if(updateDTO.getPassword() != null && !updateDTO.getPassword().isBlank()) {
+            // 여기서 유효성 검사 해야 됨.
+            updateDTO.validate();
+            String rawPassword = updateDTO.getPassword();
+            updateDTO.setPassword(passwordEncoder.encode(rawPassword));
+        } else {
+            updateDTO.setPassword(null);
+        }
+
+        // 4. 로직 처리 2 - 사용자가 새로운 이미지를 등록했을 경우
+        if(updateDTO.getProfileImage() != null && !updateDTO.getProfileImage().isEmpty()) {
+            try {
+                if(!FileUtil.isImageFile(updateDTO.getProfileImage())) {
+                    throw new Exception400("이미지 파일만 업로드 가능합니다");
+                }
+                // 새 이미지 로컬 폴더에 저장 ( 중복되지 않을 이미지 파일 이름을 리턴)
+                newProfileImageFilename = FileUtil.saveFile(updateDTO.getProfileImage(), FileUtil.IMAGES_DIR);
+                updateDTO.setProfileImageFileName(newProfileImageFilename);
+
+                // 기존 이미지 파일 삭제 해야 함(로컬에 계속 파일 쌓임)
+                String oldProfileImageFileName = userEntity.getProfileImage();
+                if(oldProfileImageFileName != null) {
+                    FileUtil.deleteFile(oldProfileImageFileName, FileUtil.IMAGES_DIR);
+                }
+            } catch (IOException e) {
+                throw new Exception400("파일 저장에 실패");
+            }
+        } else {
+            updateDTO.setProfileImageFileName(userEntity.getProfileImage());
+        }
+
+        // 더티 체킹
+        userEntity.update(updateDTO);
         return userEntity;
     }
 

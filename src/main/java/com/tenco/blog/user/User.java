@@ -81,14 +81,20 @@ public class User {
     }
 
     // 편의 기능 추가 - 회원 정보 수정
-    public void update(UserRequest.UpdateDTO updateDTO, String newProfileImageFileName) {
-        this.password = updateDTO.getPassword();
-        this.profileImage = newProfileImageFileName;
+    public void update(UserRequest.UpdateDTO updateDTO) {
+        if(updateDTO.getPassword() != null) {
+            // 암호화 변경되어 들어 옴
+            this.password = updateDTO.getPassword();
+        }
+
+        if(updateDTO.getProfileImageFileName() != null ) {
+            // 신규 파일 생성해서 들어 옴
+            this.profileImage = updateDTO.getProfileImageFileName();
+        }
     }
 
 
     // ==  User 엔티티에 권한 관련 편의 기능 만들기 보기 ==
-
     // Role 추가 편의 메서드
     // Role.ADMIN, Role.USER
     public void addRole(Role role) {

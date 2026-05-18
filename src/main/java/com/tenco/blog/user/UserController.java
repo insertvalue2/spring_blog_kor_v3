@@ -156,13 +156,7 @@ public class UserController {
     public String updateProc(UserRequest.UpdateDTO updateDTO, HttpSession session) {
         // 회원 정보 수정 요청시 기본 비밀번호 null 이고 프로필 이미지만 수정 요청
         User sessionUser = (User) session.getAttribute(Define.SESSION_USER);
-        // 프로필 이미지 변경 요청이 왔을 때 기존에 비밀번호 저장
-        if (updateDTO.getPassword() == null || updateDTO.getPassword().isBlank()) {
-            updateDTO.setPassword(sessionUser.getPassword());
-        }
-        updateDTO.validate();
         User updateUser = userService.회원정보수정(sessionUser.getId(), updateDTO);
-
         session.setAttribute(Define.SESSION_USER, updateUser);
         return "redirect:/";
     }
