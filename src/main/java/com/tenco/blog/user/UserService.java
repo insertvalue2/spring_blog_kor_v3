@@ -86,7 +86,7 @@ public class UserService {
 
         // 코드 수정
         User user = joinDTO.toEntity(profileImageUrl);
-        String hashPwd = passwordEncoder.encode("1234");
+        String hashPwd = passwordEncoder.encode(joinDTO.getPassword());
         user.setPassword(hashPwd);
         // 기본 권한 추가 (일반 사용자로 설정)
         user.addRole(Role.USER);
