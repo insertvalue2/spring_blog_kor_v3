@@ -7,9 +7,17 @@ import com.tenco.blog._core.errors.Exception500;
 import com.tenco.blog._core.util.FileUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 
@@ -26,6 +34,17 @@ public class UserService {
     private final UserRepository userRepository;
     // DI
     private final PasswordEncoder passwordEncoder;
+
+    // 초기 파미미터 값을 가져 오는 방법
+    @Value("${oauth.kakao.client-id}")
+    private String kakaoClientId;
+
+    @Value("${oauth.kakao.client-secret}")
+    private String kakaoClientSecret;
+
+    @Value("${tenco.key}")
+    private String tencoKey;
+
 
     // http://192.168.4.101:8080/join-form (강사 서버 컴퓨터 주소)
     /**
@@ -58,41 +77,10 @@ public class UserService {
         // 코드 수정
         User user = joinDTO.toEntity(profileImageFilename);
         String hashPwd = passwordEncoder.encode(joinDTO.getPassword());
-
-        System.out.println("rawPwd "  + joinDTO.getPassword());
-        System.out.println("hashPwd "  + hashPwd);
-
         user.setPassword(hashPwd);
-        // 기본 권한 추가 (일반 사용자로 설정)
-        user.addRole(Role.USER);
-        user.setOAuthProvider(OAuthProvider.LOCAL);
-
         return userRepository.save(user);
     }
 
-    /**
-     * 소셜회원가입
-     * @param joinDTO (사용자 회원가입 요청 정보)
-     * @return User (저장된 사용자 정보)
-     */
-    @Transactional
-    public User 소셜회원가입(UserRequest.JoinDTO joinDTO, String profileImageUrl) {
-        log.info("소셜 회원가입 서비스 시작");
-        // 회원가입시 사용자 이름 중복 체크
-        userRepository.findByUsername(joinDTO.getUsername()).ifPresent(user -> {
-            log.warn("회원가입 실패 - 중복된 사용자명 : {}", user.getUsername());
-            throw new Exception400("이미 존재하는 사용자 이름입니다");
-        });
-
-        // 코드 수정
-        User user = joinDTO.toEntity(profileImageUrl);
-        String hashPwd = passwordEncoder.encode(joinDTO.getPassword());
-        user.setPassword(hashPwd);
-        // 기본 권한 추가 (일반 사용자로 설정)
-        user.addRole(Role.USER);
-        user.setOAuthProvider(OAuthProvider.KAKAO);
-        return userRepository.save(user);
-    }
 
     /**
      * 로그인 처리
@@ -218,6 +206,102 @@ public class UserService {
 
     public User 사용자이름조회(String username) {
         return userRepository.findByUsername(username).orElse(null);
+    }
+
+    // 1
+    private UserResponse.OAuthToken 카카오액세스토큰발급(String code) {
+        RestTemplate restTemplate1 = new RestTemplate();
+
+        HttpHeaders headers1 = new HttpHeaders();
+        headers1.add("Content-Type", "application/x-www-form-urlencoded;charset=utf-8");
+
+        LinkedMultiValueMap<String, String> multiValueMap = new LinkedMultiValueMap();
+        multiValueMap.add("grant_type", "authorization_code");
+        multiValueMap.add("client_id", kakaoClientId);
+        multiValueMap.add("redirect_uri", "http://localhost:8080/kakao-redirect");
+        multiValueMap.add("code", code);
+        multiValueMap.add("client_secret", kakaoClientSecret);
+
+        // 순서 중요 : 바디 + 헤더 결합 ( HTTP 요청 메세지 구축)
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity(multiValueMap, headers1);
+
+        // HTTP 요청 후 응답
+        ResponseEntity<UserResponse.OAuthToken> response1 = restTemplate1.exchange(
+                "https://kauth.kakao.com/oauth/token",
+                HttpMethod.POST,
+                request,
+                UserResponse.OAuthToken.class
+        );
+        UserResponse.OAuthToken oAuthToken = response1.getBody();
+        return oAuthToken;
+    }
+
+    // 2
+    private UserResponse.KakaoProfile 카카오프로필조회(String token) {
+        String accessToken = token;
+        RestTemplate restTemplate2 = new RestTemplate();
+
+        HttpHeaders headers2 = new HttpHeaders();
+        // 주의! 반드시 Bearer + "공백한칸" + 토큰
+        headers2.add("Authorization", "Bearer " + accessToken);
+        headers2.add("Content-Type", "application/x-www-form-urlencoded;charset=utf-8");
+
+        HttpEntity request2 = new HttpEntity(headers2);
+
+        // HTTP 요청 2
+        ResponseEntity<UserResponse.KakaoProfile> response2 = restTemplate2.exchange(
+                "https://kapi.kakao.com/v2/user/me",
+                HttpMethod.POST,
+                request2,
+                UserResponse.KakaoProfile.class
+        );
+        UserResponse.KakaoProfile  kakaoProfile = response2.getBody();
+        return kakaoProfile;
+    }
+
+    // 3
+    private User 카카오조회및자동회원가입처리(UserResponse.KakaoProfile kakaoProfile) {
+        // 고유한 username 생성(중복 방지 용)
+        String username = kakaoProfile.getKakaoAccount().getProfile().getNickname() + "_" + kakaoProfile.getId();
+        // 회원 가입 여부 확인
+        User user = 사용자이름조회(username);
+
+        if(user == null) {
+            log.info("기본 회원이 아님 자동 회원 가입 진행");
+            User newUser = User.builder()
+                    .username(username)
+                    .password(passwordEncoder.encode(tencoKey)) // 임시 비밀번호 (노출 절대 금지)
+                    .email(username + "@kakao.com") // 임의 이메일 설정 (추후 DB 제약 방지)
+                    .oAuthProvider(OAuthProvider.KAKAO) // 로그인 경로 설정
+                    .build();
+
+            String profileImage = kakaoProfile.getKakaoAccount().getProfile().getProfileImageUrl();
+            if(profileImage != null && !profileImage.isEmpty()) {
+                newUser.setProfileImage(profileImage); // 카아오 서버에서 받은 이미지 설정
+            }
+            // 회원 가입 후 상태 저장
+            user = userRepository.save(newUser);
+        } else {
+            System.out.println("이미 가입된 사용자라 바로 로그인 처리");
+        }
+        return user;
+    }
+
+    // 0
+    @Transactional
+    public User 카카오소셜로그인(String code) {
+
+        // 1. 발급 받은 인가 코드로 액세스 토큰 발급 요청
+        UserResponse.OAuthToken oAuthToken  = 카카오액세스토큰발급(code);
+
+        // 2. 발급 받은 액세스 토큰으로 사용자 카카오 프로필 조회
+        UserResponse.KakaoProfile kakaoProfile =  카카오프로필조회(oAuthToken.getAccessToken());
+
+        // 3. 응답 받은 결과로 우리 서버에 가입 여부 조회 및 자동 회원 가입 처리
+        User userEntity = 카카오조회및자동회원가입처리(kakaoProfile);
+
+        // 4. 컨트롤러로 User 반환
+        return userEntity;
     }
 }
 
