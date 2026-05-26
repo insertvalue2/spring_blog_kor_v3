@@ -1,6 +1,7 @@
 package com.tenco.blog.user;
 
 import com.tenco.blog._core.errors.Exception400;
+import com.tenco.blog._core.errors.NotEnoughException;
 import jakarta.persistence.*;
 import lombok.Builder;
 import lombok.Data;
@@ -170,14 +171,13 @@ public class User {
     }
 
     //    포인트 관련 편의 메서드 추가
-
     public void deductPoint(Integer amount) {
         if(amount == null || amount <= 0 ) {
             throw new Exception400("차감할 포인트는 0보다 커야 합니다");
         }
 
         if(this.point < amount) {
-            throw new Exception400("포인트가 부족합니다. 현재 포인트 : " + this.point);
+            throw new NotEnoughException("포인트가 부족합니다. 현재 포인트 : " + this.point);
         }
         this.point -= amount;
     }

@@ -31,7 +31,11 @@ public class BoardController {
        User sessionUser = (User) session.getAttribute(Define.SESSION_USER);
         // 포인트 차감
         // 구매 이력 저장
-        purchaseService.구매하기(sessionUser.getId(), boardId);
+        User updatedUser = purchaseService.구매하기(sessionUser.getId(), boardId);
+
+        // 세션 동기화 처리
+        session.setAttribute(Define.SESSION_USER, updatedUser);
+
         return "redirect:/board/" + boardId;
     }
 
