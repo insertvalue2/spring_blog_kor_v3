@@ -25,6 +25,8 @@ public class User {
     private String username;
 
     private String password;
+    // 물리적으로 중복 값 등록 방지
+    @Column(unique = true)
     private String email;
     // 엔티티가 영속화 될 때 자동으로 현재 시간을 주입해라 pc -> db
     @CreationTimestamp

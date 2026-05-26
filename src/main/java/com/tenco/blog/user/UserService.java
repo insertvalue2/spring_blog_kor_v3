@@ -5,6 +5,7 @@ import com.tenco.blog._core.errors.Exception403;
 import com.tenco.blog._core.errors.Exception404;
 import com.tenco.blog._core.errors.Exception500;
 import com.tenco.blog._core.util.FileUtil;
+import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +36,8 @@ public class UserService {
     // DI
     private final PasswordEncoder passwordEncoder;
 
+    private final HttpSession session;
+
     // 초기 파미미터 값을 가져 오는 방법
     @Value("${oauth.kakao.client-id}")
     private String kakaoClientId;
@@ -55,11 +58,26 @@ public class UserService {
     @Transactional
     public User 회원가입(UserRequest.JoinDTO joinDTO) {
         log.info("회원가입 서비스 시작");
+        //[핵심] 이메일 인증 도장 확인
+        String verifiedEmail = (String) session.getAttribute("verified_email");
+        if(verifiedEmail == null || !verifiedEmail.equals(joinDTO.getEmail())) {
+            // 이메일 위변조를 방지하기 위해 인증번호 검증시 넣었던 그 이메일 진행 시켜야 한다
+            throw new Exception400("이메인 인증을 완료해주세요");
+        }
+
         // 회원가입시 사용자 이름 중복 체크
         userRepository.findByUsername(joinDTO.getUsername()).ifPresent(user -> {
             log.warn("회원가입 실패 - 중복된 사용자명 : {}", user.getUsername());
             throw new Exception400("이미 존재하는 사용자 이름입니다");
         });
+
+        // 중복 이메일 체크
+        // ifPresent  -> 값이 존재하면 괄호안에 코드를 수행해!!
+        userRepository.findByEmail(joinDTO.getEmail()).ifPresent(user -> {
+            log.warn("회원가입 실패 - 중복된 이메일 : {}", user.getEmail());
+            throw new Exception400("이미 존재하는 이메일 입니다");
+        });
+
         // 프로필 이미지 저장 기능 구현 (선택 사항 임)
         String profileImageFilename = null;
         if(joinDTO.getProfileImage() != null && joinDTO.getProfileImage().isEmpty() == false) {
@@ -78,6 +96,9 @@ public class UserService {
         User user = joinDTO.toEntity(profileImageFilename);
         String hashPwd = passwordEncoder.encode(joinDTO.getPassword());
         user.setPassword(hashPwd);
+
+        //[핵심] 이메일 인증 도장 삭제
+        session.removeAttribute("verified_email");
         return userRepository.save(user);
     }
 
