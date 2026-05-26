@@ -1,5 +1,7 @@
 package com.tenco.blog.board;
 
+import com.tenco.blog._core.util.Define;
+import com.tenco.blog.purchase.PurchaseService;
 import com.tenco.blog.reply.ReplyResponse;
 import com.tenco.blog.reply.ReplyService;
 import com.tenco.blog.user.User;
@@ -21,6 +23,19 @@ public class BoardController {
     private final BoardService boardService;
     // 댓글 목록 조회시 필요
     private final ReplyService replyService;
+    private final PurchaseService purchaseService;
+
+    // /board/{{board.id}}/purchase
+    @PostMapping("/board/{id}/purchase")
+    public String purchase(@PathVariable(name = "id") Integer boardId, HttpSession session) {
+       User sessionUser = (User) session.getAttribute(Define.SESSION_USER);
+        // 포인트 차감
+        // 구매 이력 저장
+        purchaseService.구매하기(sessionUser.getId(), boardId);
+        return "redirect:/board/" + boardId;
+    }
+
+
 
     /**
      * 게시글 작성 화면 요청
@@ -39,9 +54,14 @@ public class BoardController {
      */
     @PostMapping("/board/save")
     public String saveProc(BoardRequest.SaveDTO saveDTO, HttpSession session) {
+        // 1. 인증 검사: LoginInterceptor가 처리 (인터셉터를 통과했다는 것은 로그인된 사용자임)
         User sessionUser = (User) session.getAttribute("sessionUser");
-        saveDTO.validate();
+
+        // 2. Service에 비즈니스 로직 위임
+        // - DTO를 엔티티로 변환
+        // - 게시글 저장 (INSERT)
         boardService.게시글작성(saveDTO, sessionUser);
+
         return "redirect:/";
     }
 
@@ -80,15 +100,25 @@ public class BoardController {
     @GetMapping("/board/{id}")
     public String detailPage(@PathVariable(name = "id") Integer id, Model model, HttpSession session) {
 
-        BoardResponse.DetailDTO detailDTO = boardService.게시글상세조회(id);
 
         // 게시글 상세보기는 로그인 하지 않은 사용자도 들어올 수 있음
         User sessionUser = (User) session.getAttribute("sessionUser");
         Integer sessionUserId = sessionUser != null ? sessionUser.getId() : null;
+
+        // 추가 로직 - 유료 게시글이라면 구매 여부 포함해서 상세 보기 조회
+        BoardResponse.DetailDTO detailDTO = boardService.게시글상세조회(id, sessionUserId);
+
+        // 유료 게시글 경우 - 본인이 작성할 글이라면 보여 주어야 함
+        // 소유자 여부
+        boolean isOwner = detailDTO.checkIsOwner(sessionUserId);
+
+        // 머스태치 는 AND/OR 같은 논리 연산을 화면에서 못함. 즉, 자바 코드에서 미리 연산해서
+        boolean canRead = !detailDTO.getPremium() || detailDTO.getPurchased() || isOwner;
         List<ReplyResponse.ListDTO> replyList = replyService.댓글목록조회(id, sessionUserId);
 
-        // view 에 데이터 전달
+        // view 에 데이터 전달 - canRead -> true, false
         model.addAttribute("board", detailDTO);
+        model.addAttribute("canRead", canRead);
         model.addAttribute("checkIsOwner", detailDTO.checkIsOwner(sessionUserId));
         model.addAttribute("replyList", replyList);
 

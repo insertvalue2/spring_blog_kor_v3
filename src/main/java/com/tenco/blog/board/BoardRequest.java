@@ -14,6 +14,7 @@ public class BoardRequest {
 
         private String title;
         private String content;
+        private Boolean premium; // 유료 게시을 여부 (체크 박스)
 
         // 편의 기능 설계 가능
         // DTO 에서 Entity로 변환해주는 편의 메서드
@@ -22,6 +23,7 @@ public class BoardRequest {
                     .title(title)
                     .user(user)
                     .content(content)
+                    .premium(premium != null ? premium : false)
                     .build();
         }
 
@@ -33,7 +35,6 @@ public class BoardRequest {
                 throw new IllegalArgumentException("내용은 3글자 이상 작성해야 합니다.");
             }
         }
-
     }
 
     // 내부 정적 클래스 게시글 수정 DTO 설계
@@ -41,6 +42,7 @@ public class BoardRequest {
     public static class UpdateDTO {
         private String title;
         private String content;
+        private Boolean premium; // 수정시 유료 게시글 여부 (체크 박스)
 
         // 게시글 수정시 유효성 검사 편의 메서드
         public void validate() {
