@@ -86,6 +86,7 @@ public class BoardController {
         BoardResponse.PageDTO boardPage = boardService.게시글목록(page, size, keyword);
         model.addAttribute("boardPage", boardPage);
         model.addAttribute("keyword", keyword != null ? keyword : "");
+
         return "board/list";
     }
 
